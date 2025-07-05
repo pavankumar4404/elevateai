@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+import { generateAIInsights } from "./dashboard";
 
 export async function updateUser(data) {
   const { userId } = await auth();
@@ -13,31 +14,27 @@ export async function updateUser(data) {
     where: { clerkUserId: userId },
   });
 
-  if(!user) {
+  if (!user) {
     throw new Error("User not found");
   }
-  try{
+  try {
     const result = await db.$transaction(
-      async(tx) => {
+      async (tx) => {
         //find if industry exists
         let industryInsight = await tx.industryInsight.findUnique({
-          where:{
+          where: {
             industry: data.industry,
           },
         });
 
         //if not, create it with default values and replace with ai later
-        if(!industryInsight) {
-          industryInsight = await tx.industryInsight.create({
+        if (!industryInsight) {
+          const insights = await generateAIInsights(data.industry);
+
+          const industryInsight = await db.industryInsight.create({
             data: {
               industry: data.industry,
-              salaryRanges: [], // Default empty array
-              growthRate: 0, // Default value
-              demandLevel: "MEDIUM", // Default value
-              topSkills: [], // Default empty array
-              marketOutlook: "NEUTRAL", // Default value
-              keyTrends: [], // Default empty array
-              recommendedSkills: [], // Default empty array
+              ...insights,
               nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
             },
           });
@@ -62,8 +59,7 @@ export async function updateUser(data) {
     );
 
     return { success: true, ...result };
-  }
-  catch(error) {
+  } catch (error) {
     console.error("Error updating user:", error);
     throw new Error("Failed to update profile " + error.message);
   }
@@ -83,19 +79,18 @@ export async function getUserOnboardingStatus() {
     throw new Error("User not found");
   }
 
-  try{
+  try {
     const user = await db.user.findUnique({
       where: { clerkUserId: userId },
       select: {
         industry: true,
       },
-    })
+    });
 
     return {
       isOnboarded: !!user?.industry,
     };
-  } 
-  catch (error) {
+  } catch (error) {
     console.error("Error fetching user onboarding status:", error.message);
     throw new Error("Failed to fetch onboarding status");
   }
